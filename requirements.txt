@@ -1,0 +1,6 @@
+tensorflow==2.14.0
+tensorflow-probability==0.22.0
+numpy==1.26.0
+mir_eval==0.7
+tqdm==4.66.1
+# Add any other specific versions if you know them
