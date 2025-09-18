@@ -19,11 +19,10 @@ if physical_devices:
     try: tf.config.experimental.set_memory_growth(physical_devices[0], True); print("GPU memory growth set")
     except Exception as e: print(e)
 
-# --- CHOOSE YOUR BASELINE EXPERIMENT ---
-BETA_VALUE = 0.5  # Options: 0.0 (standard NLL), 0.5 (recommended), 1.0 (MSE-like)
+BETA_VALUE = 0.5  
 
 # --- PATHS ---
-DATA_DIR = '../../../../../spl_v2_mir1k/npy_data'
+DATA_DIR = ''
 WEIGHTS_PATH = f'./saved_models_beta_nll_baseline/beta_{BETA_VALUE}/'
 os.makedirs(WEIGHTS_PATH, exist_ok=True)
 
@@ -90,18 +89,16 @@ def compute_metrics(y_true_hz_batch, y_pred_hz_batch):
         except: continue
     return np.mean(rpa_list) if rpa_list else 0, np.mean(rca_list) if rca_list else 0, np.mean(oa_list) if oa_list else 0
 
-# --- β-NLL Loss Function (from the paper) ---
+# --- β-NLL Loss Function---
 def beta_nll_loss(y_true_bins, y_true_voicing, pitch_params, beta):
     mu_pred, sigma_pred = pitch_params
     y_true_bins_f32 = tf.cast(y_true_bins, tf.float32)
     y_true_voicing_f32 = tf.cast(y_true_voicing, tf.float32)
     
-    # Calculate standard NLL for each frame
+    # standard NLL 
     variance = tf.square(sigma_pred)
     nll_per_frame = 0.5 * (tf.math.log(2.0 * np.pi * variance + 1e-9) + tf.square(y_true_bins_f32 - mu_pred) / (variance + 1e-9))
     
-    # Apply the beta weighting from the paper
-    # Use tf.stop_gradient on the weighting term
     weighting_term = tf.stop_gradient(tf.pow(variance, beta))
     weighted_nll_per_frame = weighting_term * nll_per_frame
     
@@ -114,7 +111,7 @@ def beta_nll_loss(y_true_bins, y_true_voicing, pitch_params, beta):
     loss = tf.reduce_sum(masked_nll) / num_voiced_frames
     return loss
 
-# --- NLL Model Architecture (Single Head) ---
+# NLL Model Architecture 
 class ResNet_block(Model):
     def __init__(self, filters):
         super().__init__(); self.conv1=Conv2D(filters,(3,3),padding='same',kernel_initializer='he_normal'); self.bn1=BatchNormalization(); self.act1=LeakyReLU(0.01); self.conv2=Conv2D(filters,(3,3),padding='same',kernel_initializer='he_normal'); self.bn2=BatchNormalization(); self.act2=LeakyReLU(0.01); self.add=tf.keras.layers.Add(); self.pool=MaxPooling2D((1,4))
