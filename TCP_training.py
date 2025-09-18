@@ -10,14 +10,14 @@ import mir_eval.melody
 import keras
 import sys
 
-# --- GPU and General Configurations ---
+
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 physical_devices = tf.config.list_physical_devices('GPU')
 if physical_devices:
     tf.config.experimental.set_memory_growth(physical_devices[0], True)
 
 # --- PATHS ---
-DATA_DIR = '../../../../../spl_v2_mir1k/npy_data'
+DATA_DIR = ''
 BASE_MODEL_WEIGHTS_PATH = './model_weights/BASELINE_CLASSIFICATION_MODEL/' 
 CONFIDENCE_MODEL_WEIGHTS_PATH = './model_weights/CONFIDENCE_MODEL/'
 os.makedirs(BASE_MODEL_WEIGHTS_PATH, exist_ok=True)
@@ -49,7 +49,7 @@ bin_centers_log = np.array([(np.log2(bin_borders[i] / freq_min) + np.log2(bin_bo
 num_bins = len(bin_borders) - 1
 UNVOICED_CLASS_LABEL = num_bins
 
-# --- Data Preprocessing ---
+
 def load_and_preprocess_classification(audio_path, pitch_path):
     audio = np.load(audio_path.numpy().decode()).astype(np.float32)
     mean, std = np.mean(audio), np.std(audio)
@@ -110,7 +110,7 @@ class ConfidenceModel(Model):
         confidence_scores = self.confidence_output(c)
         return tf.squeeze(confidence_scores, axis=-1)
 
-# --- Helper Functions ---
+
 def compute_metrics(y_true_hz, y_pred_hz):
     rpa, rca, oa = [], [], [];
     for i in range(y_true_hz.shape[0]):
@@ -136,9 +136,9 @@ def calculate_tcp_n_target(probs, true_labels, epsilon=1e-9):
     is_correct_mask = tf.cast(tf.argmax(probs, axis=-1, output_type=tf.int32) == true_labels, dtype=tf.float32)
     return tcp_n * (1.0 - is_correct_mask) + is_correct_mask
 
-#############################################################################
-# --- PART 1: TRAIN THE BASE CLASSIFICATION MODEL ---
-#############################################################################
+
+# TRAIN THE BASE CLASSIFICATION MODEL ---
+
 print("--- PART 1: Starting Base Classification Model Training ---")
 
 base_model = BaselineClassificationModel()
@@ -190,12 +190,12 @@ for epoch in range(base_model_epochs):
 print("\n--- Base Model Training Complete ---")
 
 
-#############################################################################
+
 # --- PART 2: TRAIN THE CONFIDENCE MODEL ---
-#############################################################################
+
 print("\n\n--- PART 2: Starting Confidence Model Training ---")
 
-# Re-instantiate the base model to ensure a clean state, then load weights
+
 base_model_frozen = BaselineClassificationModel()
 _, _ = base_model_frozen(dummy_input)
 final_base_weights_path = os.path.join(BASE_MODEL_WEIGHTS_PATH, f'baseline_model_{base_model_epochs}.weights.h5')
