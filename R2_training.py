@@ -18,9 +18,9 @@ if physical_devices:
     tf.config.experimental.set_memory_growth(physical_devices[0], True)
 
 # --- PATHS ---
-DATA_DIR = '../../../../../spl_v2_mir1k/npy_data'
+DATA_DIR = ''
 # Define a new directory for the M3 model weights
-WEIGHTS_PATH = './model_weights/TRUE_SINGLE_HEAD_EDL_MODEL/' 
+WEIGHTS_PATH = '' 
 os.makedirs(WEIGHTS_PATH, exist_ok=True)
 
 # --- Data Loading ---
@@ -77,7 +77,7 @@ def prepare_dataset(audio_files, pitch_files, b_size, shuffle=False):
     dataset = dataset.batch(b_size).prefetch(tf.data.AUTOTUNE)
     return dataset
 
-# --- Model Architecture (M3 Version) ---
+# --- Model Architecture ---
 class ResNet_block(Model):
     def __init__(self, filters):
         super().__init__()
