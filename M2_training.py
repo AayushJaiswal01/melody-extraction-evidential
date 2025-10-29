@@ -17,9 +17,9 @@ if physical_devices:
     tf.config.experimental.set_memory_growth(physical_devices[0], True)
 
 # --- PATHS ---
-DATA_DIR = '../../../../../spl_v2_mir1k/npy_data'
+DATA_DIR = ''
 # Define a new directory for the weights of this specific model
-WEIGHTS_PATH = './model_weights/DIRECT_PRED_DECOUPLED_MODEL/' 
+WEIGHTS_PATH = '' 
 os.makedirs(WEIGHTS_PATH, exist_ok=True)
 
 # --- Data Loading ---
@@ -112,8 +112,8 @@ class MelodyModel(Model):
         voicing_features = self.voicing_dense(shared_features); vd = self.voicing_output(voicing_features)
         pitch_features = self.pitch_dense(shared_features); nig_params_raw = self.pitch_output(pitch_features)
         
-        # --- Using Direct Prediction for Gamma as requested ---
-        gamma = nig_params_raw[..., 0] # Output is unbounded, model must learn the range
+ 
+        gamma = nig_params_raw[..., 
         
         nu = tf.nn.softplus(nig_params_raw[..., 1]) + 1e-6
         alpha = tf.nn.softplus(nig_params_raw[..., 2]) + 1.1
@@ -159,7 +159,6 @@ def compute_metrics(y_true_hz, y_pred_hz):
 
 def calculate_expected_value(pred_vd, nig_params):
     pred_vd = tf.reshape(pred_vd, [tf.shape(pred_vd)[0], -1]); gamma, _, _, _ = nig_params
-    # Because gamma is unbounded, clipping here is essential to prevent errors.
     pred_indices = tf.cast(tf.round(tf.clip_by_value(gamma, 0, num_bins - 1)), dtype=tf.int32)
     pred_log_freq = tf.gather(bin_centers_log, pred_indices)
     exp_val = freq_min * tf.pow(2.0, pred_log_freq)
