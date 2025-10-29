@@ -17,11 +17,11 @@ if physical_devices:
     tf.config.experimental.set_memory_growth(physical_devices[0], True)
 
 # --- PATHS ---
-DATA_DIR = '../../../../../spl_v2_mir1k/npy_data'
-WEIGHTS_PATH = './model_weights/EVIDENTIAL_CLASSIFICATION_MODEL_FINAL/'
+DATA_DIR = ''
+WEIGHTS_PATH = ''
 os.makedirs(WEIGHTS_PATH, exist_ok=True)
 
-# --- Hyperparameters and Data Setup (Unchanged) ---
+# --- Hyperparameters and Data Setup ---
 train_audio_files = sorted(glob(os.path.join(DATA_DIR, 'train/audio/*.npy')))
 train_pitch_files = sorted(glob(os.path.join(DATA_DIR, 'train/pitch/*.npy')))
 val_audio_files = sorted(glob(os.path.join(DATA_DIR, 'val/audio/*.npy')))
@@ -34,7 +34,7 @@ bin_centers_log = np.array([(np.log2(bin_borders[i] / freq_min) + np.log2(bin_bo
 num_bins = len(bin_centers_log)
 bin_borders_tf = tf.constant(bin_borders, dtype=tf.float32)
 
-# --- Data Preprocessing and Model Architecture (Unchanged) ---
+# --- Data Preprocessing and Model Architecture ---
 def load_and_normalize_per_file(wav_path):
     audio = np.load(wav_path.numpy().decode()).astype(np.float32); mean, std = np.mean(audio), np.std(audio)
     return (audio - mean) / (std + 1e-7)
@@ -55,7 +55,7 @@ def prepare_dataset(audio_files, pitch_files, b_size, shuffle=False):
     if shuffle: dataset = dataset.shuffle(buffer_size=len(audio_files))
     dataset = dataset.map(load_and_preprocess, num_parallel_calls=tf.data.AUTOTUNE)
     return dataset.batch(b_size).prefetch(tf.data.AUTOTUNE)
-class ResNet_block(Model): # Unchanged...
+class ResNet_block(Model):
     def __init__(self, filters):
         super().__init__()
         self.conv1=Conv2D(filters,(1,1),padding='same',kernel_initializer='he_normal',kernel_regularizer=l2(1e-5));self.bn1=BatchNormalization();self.act1=LeakyReLU(0.01)
@@ -66,7 +66,7 @@ class ResNet_block(Model): # Unchanged...
     def call(self,input_tensor,training=False):
         x=self.conv1(input_tensor);shortcut=self.bn1(x,training=training);x=self.act1(shortcut);x=self.conv2(x);x=self.bn2(x,training=training);x=self.act2(x);x=self.conv3(x);x=self.bn3(x,training=training);x=self.act3(x);x=self.conv4(x);x=self.bn4(x,training=training);x=self.add([x,shortcut]);x=self.act4(x)
         return self.pool(x)
-class MelodyModel(Model): # Unchanged...
+class MelodyModel(Model):
     def __init__(self, dropout_rate=0.3):
         super().__init__()
         self.rb1=ResNet_block(32);self.rb2=ResNet_block(64);self.rb3=ResNet_block(128);self.rb4=ResNet_block(256);self.dropout1=Dropout(dropout_rate);self.reshape_layer=None
@@ -84,25 +84,19 @@ class WeightedBinaryCrossEntropy(tf.keras.losses.Loss): # Unchanged
     def __init__(self,weight_pos,weight_neg,epsilon=1e-7):super().__init__();self.weight_pos=weight_pos;self.weight_neg=weight_neg;self.epsilon=epsilon
     def call(self,y_true,y_pred):y_pred=tf.reshape(y_pred,tf.shape(y_true));y_true=tf.cast(y_true,tf.float32);y_pred=tf.clip_by_value(y_pred,self.epsilon,1.0-self.epsilon);loss=-(self.weight_pos*y_true*tf.math.log(y_pred)+self.weight_neg*(1-y_true)*tf.math.log(1-y_pred));return tf.reduce_mean(loss)
 weights = [1.0, 1.0]; bce_loss_fn = WeightedBinaryCrossEntropy(weights[1], weights[0])
-### RECOMMENDED FIX ###
-# This is the Cross-Entropy style loss (Type-II ML from paper's Eq. 3)
-# It provides a much stronger gradient for high-class-count problems.
+
 def evidential_loss_classification(y_true_one_hot, alpha):
     """The Cross-Entropy style loss (Type-II ML from paper's Eq. 3)."""
     S = tf.reduce_sum(alpha, axis=-1)
     
-    # Expand S for broadcasting: from [batch, win_size] to [batch, win_size, 1]
     S_expanded = tf.expand_dims(S, axis=-1)
     
-    # This now works: [batch, win_size, 1] - [batch, win_size, num_bins]
     log_likelihood = tf.math.digamma(S_expanded) - tf.math.digamma(alpha)
     
-    # We only want the log-likelihood for the correct class
     loss = tf.reduce_sum(y_true_one_hot * log_likelihood, axis=-1)
     
     return loss
 
-### CORRECTED: KL Divergence Implementation ###
 def kl_regularization(y_true_one_hot, alpha):
     alpha_tilde = y_true_one_hot + (1 - y_true_one_hot) * alpha
     sum_alpha_tilde = tf.reduce_sum(alpha_tilde, axis=-1)
@@ -111,7 +105,6 @@ def kl_regularization(y_true_one_hot, alpha):
     term3 = tf.reduce_sum((alpha_tilde-1.0)*(tf.math.digamma(alpha_tilde)-tf.math.digamma(tf.expand_dims(sum_alpha_tilde,-1))),axis=-1)
     return term1 + term2 + term3
 
-### CORRECTED VERSION ###
 def custom_loss_evidential_cls(gfv, y_one_hot, vd_pred, alpha, lambda_t, p_loss_w=1.0):
     vd_pred_flat = tf.reshape(vd_pred, [tf.shape(vd_pred)[0], -1])
     vd_gfv = tf.cast(gfv > 0, tf.float32) # Shape: [batch_size, win_size]
@@ -120,23 +113,21 @@ def custom_loss_evidential_cls(gfv, y_one_hot, vd_pred, alpha, lambda_t, p_loss_
     pitch_loss = evidential_loss_classification(y_one_hot, alpha) # Shape: [batch_size, win_size]
     kl_loss = kl_regularization(y_one_hot, alpha) # Shape: [batch_size, win_size]
     
-    # Use the mask 'vd_gfv' directly, as it has the correct shape.
     masked_pitch_loss = tf.reduce_sum(pitch_loss * vd_gfv) / (tf.reduce_sum(vd_gfv) + 1e-7)
     masked_kl_loss = tf.reduce_sum(kl_loss * vd_gfv) / (tf.reduce_sum(vd_gfv) + 1e-7)
 
     return bce_loss + p_loss_w * (masked_pitch_loss + lambda_t * masked_kl_loss)
-def compute_metrics(y_true_hz, y_pred_hz): # Unchanged
+def compute_metrics(y_true_hz, y_pred_hz): 
     rpa, rca, oa = [], [], [];
     for i in range(y_true_hz.shape[0]):
         gfv, efv = y_true_hz[i], y_pred_hz[i]; t = np.arange(len(gfv)) * 0.01
         try:ref_v,ref_c,est_v,est_c=mir_eval.melody.to_cent_voicing(t,gfv,t,efv);rpa.append(mir_eval.melody.raw_pitch_accuracy(ref_v,ref_c,est_v,est_c));rca.append(mir_eval.melody.raw_chroma_accuracy(ref_v,ref_c,est_v,est_c));oa.append(mir_eval.melody.overall_accuracy(ref_v,ref_c,est_v,est_c))
         except: continue
     return np.mean(rpa) if rpa else 0, np.mean(rca) if rca else 0, np.mean(oa) if oa else 0
-def calculate_expected_value(pred_vd, alpha): # Unchanged
+def calculate_expected_value(pred_vd, alpha): 
     pred_vd=tf.reshape(pred_vd,[tf.shape(pred_vd)[0],-1]);pred_indices=tf.cast(tf.argmax(alpha,axis=-1),dtype=tf.int32);pred_log_freq=tf.gather(bin_centers_log,pred_indices);exp_val=freq_min*tf.pow(2.0,pred_log_freq);mask=tf.cast(pred_vd>=0.5,tf.float32)
     return exp_val * mask
 
-### CORRECTED: Uncertainty Calculation ###
 def calculate_uncertainties(alpha):
     S = tf.reduce_sum(alpha, axis=-1)
     p = alpha / tf.expand_dims(S, -1)
@@ -151,7 +142,7 @@ dummy_input=tf.zeros((1,win_size,Nfft//2+1,1)); _=model(dummy_input,training=Fal
 print("Model built successfully.")
 
 @tf.function
-def train_step(x_audio, y_gfv, y_one_hot, lambda_t): # Unchanged
+def train_step(x_audio, y_gfv, y_one_hot, lambda_t): 
     with tf.GradientTape() as tape:
         vd_pred, alpha = model(x_audio, training=True)
         loss = custom_loss_evidential_cls(y_gfv, y_one_hot, vd_pred, alpha, lambda_t)
@@ -162,7 +153,7 @@ def train_step(x_audio, y_gfv, y_one_hot, lambda_t): # Unchanged
     return loss, y_pred_hz
 
 @tf.function
-def test_step(x_audio, y_gfv, y_one_hot): # Unchanged
+def test_step(x_audio, y_gfv, y_one_hot): 
     vd_pred,alpha=model(x_audio,training=False);loss=custom_loss_evidential_cls(y_gfv,y_one_hot,vd_pred,alpha,lambda_t=0.0)
     y_pred_hz=calculate_expected_value(vd_pred,alpha);is_voiced_mask=tf.cast(y_gfv>0,dtype=tf.float32)
     total_u,aleatoric_u,epistemic_u=calculate_uncertainties(alpha);masked_total=total_u*is_voiced_mask
@@ -175,13 +166,11 @@ val_dataset=prepare_dataset(val_audio_files,val_pitch_files,batch_size,shuffle=F
 
 for epoch in range(epochs):
     print(f'\nEpoch {epoch + 1}/{epochs}')
-    # Number of epochs to train without KL regularization
     WARMUP_EPOCHS = 15 
 
     if epoch < WARMUP_EPOCHS:
         lambda_t = tf.cast(0.0, tf.float32)
     else:
-        # After the warmup, slowly ramp up the KL penalty
         lambda_t = tf.cast(min(1.0, (epoch - WARMUP_EPOCHS) / 20.0), tf.float32)
         
     print(f"  Annealing coefficient (lambda_t): {lambda_t:.2f}")
