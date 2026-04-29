@@ -81,9 +81,12 @@ If you use this code in your research, please consider citing our paper:
 
 ```bibtex
 @article{YourLastNameYEAR,
-  title={[Your Paper Title Here]},
-  author={[Your Name] and [Co-author Names]},
-  journal={[Journal or Conference Name]},
-  year={[Year]}
+  title={Improving Active Learning for Melody Estimation by Disentangling Uncertainties},
+  author={Aayush Jaiswal and Parampreet Singh and Vipul Arora},
+  year={2025},
+  eprint={2509.17375},
+  archivePrefix={arXiv},
+  primaryClass={eess.AS},
+  url={https://arxiv.org/abs/2509.17375}
 }
 ```
